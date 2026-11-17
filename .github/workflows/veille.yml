@@ -39,7 +39,7 @@ jobs:
       # Bouton « Valider » de l'alerte : ouvre cette page, puis Run workflow avec la case « valider »
       VALIDATE_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/veille.yml
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Notification de test
         if: ${{ inputs.test }}
