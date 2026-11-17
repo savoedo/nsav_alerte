@@ -62,11 +62,13 @@ notify() {
   if [ -n "${TELEGRAM_USER:-}" ]; then
     # CallMeBot répond 200 même en cas d'erreur : on lit sa réponse.
     # Le service gratuit refuse souvent l'appel (« FLOOD ») : on réessaie toutes les 45 s.
-    local reply attempt
+    local reply attempt spoken="$title. $message"
+    # Pas de point après un titre qui finit déjà par une ponctuation (« ! » puis « . »)
+    [[ "$title" =~ [.!?]$ ]] && spoken="$title $message"
     for attempt in 1 2 3 4 5 6; do
       reply="$(curl -sS --retry 2 --max-time 90 -G "https://api.callmebot.com/start.php" \
         --data-urlencode "user=$TELEGRAM_USER" \
-        --data-urlencode "text=$title. $message" \
+        --data-urlencode "text=$spoken" \
         --data-urlencode "lang=fr-FR-Standard-A" \
         --data-urlencode "rpt=2" 2>&1 || true)"
       # On n'affiche que le verdict, pas le texte lu (il passerait dans les logs publics)

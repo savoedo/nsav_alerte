@@ -34,7 +34,7 @@ jobs:
       NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
       TELEGRAM_USER: ${{ secrets.TELEGRAM_USER }}
       # Texte de l'alerte : lu aussi par l'appel Telegram (256 caractères max)
-      ALERT_TITLE: "Billets disponibles !"
+      ALERT_TITLE: "URGENT – Billets disponibles !"
       ALERT_MESSAGE: "Les vols spéciaux Cotonou – Paris sont disponibles. Connecte-toi vite pour réserver !"
       # Bouton « Valider » de l'alerte : ouvre cette page, puis Run workflow avec la case « valider »
       VALIDATE_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/veille.yml
