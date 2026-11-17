@@ -1,0 +1,69 @@
+name: Veille
+
+on:
+  schedule:
+    # Toutes les 10 min, décalé de 3 min : GitHub saute plus souvent les tâches
+    # prévues pile à l'heure ou aux dizaines, très chargées. Aucun horaire n'est garanti.
+    - cron: "3,13,23,33,43,53 * * * *"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Envoyer une notification de test"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: veille
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Tout ce qui identifie le site est dans les secrets (masqués dans les logs publics)
+      URL: ${{ secrets.WATCH_URL }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+      TELEGRAM_USER: ${{ secrets.TELEGRAM_USER }}
+      # Texte de l'alerte : lu aussi par l'appel Telegram (256 caractères max)
+      ALERT_TITLE: "Billets disponibles !"
+      ALERT_MESSAGE: "Les vols spéciaux Cotonou – Paris sont disponibles. Connecte-toi vite pour réserver !"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Notification de test
+        if: ${{ inputs.test }}
+        run: TEST=1 bash check.sh
+
+      - name: Comparer la page et prévenir
+        id: check
+        if: ${{ !inputs.test }}
+        run: bash check.sh
+
+      - name: Enregistrer la nouvelle version (chiffrée)
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "veille-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/page.enc
+          git commit -m "Changement détecté"
+          git push
+
+      # Un dépôt public sans activité pendant 60 jours voit ses tâches planifiées désactivées :
+      # on fait un petit commit si le dernier date de plus de 45 jours.
+      - name: Garder la veille active
+        if: ${{ !inputs.test }}
+        run: |
+          last=$(git log -1 --format=%ct)
+          if [ $(( $(date +%s) - last )) -gt $(( 45 * 86400 )) ]; then
+            date -u +%FT%TZ > state/heartbeat
+            git config user.name "veille-bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state/heartbeat
+            git commit -m "Maintien de la veille"
+            git pull --rebase && git push
+          fi
