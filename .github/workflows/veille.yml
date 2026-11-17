@@ -11,6 +11,10 @@ on:
         description: "Envoyer une notification de test"
         type: boolean
         default: false
+      valider:
+        description: "Valider la page actuelle comme référence (arrête l'alerte en cours)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -32,6 +36,8 @@ jobs:
       # Texte de l'alerte : lu aussi par l'appel Telegram (256 caractères max)
       ALERT_TITLE: "Billets disponibles !"
       ALERT_MESSAGE: "Les vols spéciaux Cotonou – Paris sont disponibles. Connecte-toi vite pour réserver !"
+      # Bouton « Valider » de l'alerte : ouvre cette page, puis Run workflow avec la case « valider »
+      VALIDATE_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/veille.yml
     steps:
       - uses: actions/checkout@v4
 
@@ -42,16 +48,18 @@ jobs:
       - name: Comparer la page et prévenir
         id: check
         if: ${{ !inputs.test }}
+        env:
+          ACCEPT: ${{ inputs.valider && '1' || '0' }}
         run: bash check.sh
 
-      - name: Enregistrer la nouvelle version (chiffrée)
+      - name: Enregistrer la nouvelle référence (chiffrée)
         if: steps.check.outputs.changed == 'true'
         run: |
           git config user.name "veille-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add state/page.enc
-          git commit -m "Changement détecté"
-          git push
+          git commit -m "Nouvelle référence enregistrée"
+          git pull --rebase && git push
 
       # Un dépôt public sans activité pendant 60 jours voit ses tâches planifiées désactivées :
       # on fait un petit commit si le dernier date de plus de 45 jours.

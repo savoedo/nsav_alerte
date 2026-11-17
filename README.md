@@ -5,7 +5,9 @@ version connue. En cas de changement :
 
 1. une notification ntfy prioritaire part sur le téléphone, avec le nouveau texte de la page ;
 2. CallMeBot passe un appel Telegram qui lit le message ;
-3. la nouvelle version est enregistrée.
+3. l'alerte recommence à chaque vérification **tant que la nouvelle version n'est pas validée**
+   (*Actions → Veille → Run workflow*, case « Valider la page actuelle comme référence »,
+   ou bouton « Valider » de la notification).
 
 Toutes les heures, une notification discrète confirme que la veille tourne (ou que le site
 ne répond pas). Une erreur réseau n'est pas comptée comme un changement.
@@ -31,8 +33,10 @@ dans Telegram pour autoriser l'appel.
 
 - **Test** : *Actions → Veille → Run workflow*, cocher « Envoyer une notification de test ».
 - **Texte de l'alerte** : `ALERT_TITLE` et `ALERT_MESSAGE` dans `.github/workflows/veille.yml`.
-- **Changer de page ou de sujet ntfy** : modifier le secret ; au passage suivant, la page
-  actuelle devient la nouvelle référence, sans alerte.
+- **Changer de page** : modifier le secret `WATCH_URL`, puis valider la nouvelle page comme
+  référence (sinon l'alerte se déclenche, puisque la page diffère de la référence).
+- **Changer de sujet ntfy** : la référence chiffrée devient illisible ; au passage suivant,
+  la page actuelle devient automatiquement la nouvelle référence, sans alerte.
 
 ## Bon à savoir
 

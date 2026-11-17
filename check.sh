@@ -5,7 +5,10 @@
 #   - l'adresse vient d'un secret (masqué dans les logs) ;
 #   - la dernière version est stockée chiffrée (state/page.enc, clé = NTFY_TOPIC) ;
 #   - les logs n'affichent ni l'adresse ni le contenu de la page.
-# Si une page change, le workflow committe le nouveau state/page.enc (sortie changed=true).
+#
+# Tant que la page diffère de la référence, chaque passage renvoie l'alerte. La référence
+# ne change que sur action explicite (ACCEPT=1, case « Valider » du workflow) ; le workflow
+# committe alors le nouveau state/page.enc (sortie changed=true).
 #
 # Variables d'environnement :
 #   URL            page à surveiller (obligatoire, secret WATCH_URL)
@@ -14,7 +17,9 @@
 #   TELEGRAM_USER  @pseudo Telegram pour l'appel CallMeBot (optionnel)
 #   ALERT_TITLE    titre de l'alerte (notification et appel)
 #   ALERT_MESSAGE  texte de l'alerte (notification et appel, 256 caractères max pour l'appel)
+#   VALIDATE_URL   lien du bouton « Valider » de l'alerte (page du workflow sur GitHub)
 #   TEST=1         envoie une notification de test sans rien comparer
+#   ACCEPT=1       enregistre la page actuelle comme nouvelle référence
 #   HEARTBEAT=0    désactive la notification horaire « Veille active »
 set -euo pipefail
 
@@ -50,8 +55,10 @@ ntfy_publish() {
 notify() {
   local title="$1" message="$2" details="${3:-}" nl=$'\n'
   ntfy_publish "$(jq -n --arg ti "$title" --arg m "$message${details:+$nl$nl$details}" --arg site "$URL" \
+                       --arg valid "${VALIDATE_URL:-}" \
     '{title:$ti, message:$m, priority:5, tags:["ticket","rotating_light"], click:$site,
-      actions:[{action:"view", label:"Réserver", url:$site}]}')"
+      actions:([{action:"view", label:"Réserver", url:$site}]
+               + (if $valid != "" then [{action:"view", label:"Valider (stop alerte)", url:$valid}] else [] end))}')"
   if [ -n "${TELEGRAM_USER:-}" ]; then
     # CallMeBot répond 200 même en cas d'erreur : on lit sa réponse.
     # Le service gratuit refuse souvent l'appel (« FLOOD ») : on réessaie toutes les 45 s.
@@ -105,6 +112,10 @@ fi
 # sinon GitHub enverrait un e-mail d'échec toutes les 10 min pendant une panne du site.
 if ! curl -fsSL --retry 3 --retry-delay 10 --max-time 60 -A "Mozilla/5.0 (veille-contenu)" "$URL" -o "$NEW" 2>/dev/null \
    || [ ! -s "$NEW" ]; then
+  if [ "${ACCEPT:-0}" = "1" ]; then
+    echo "::error::Page injoignable : impossible de l'enregistrer comme référence. Réessaie plus tard."
+    exit 1
+  fi
   echo "::warning::Page injoignable ou vide, passage ignoré."
   heartbeat "⚠️ site injoignable" "$URL ne répond pas (vérification de $NOW_LOCAL, heure de Paris). La veille continue."
   exit 0
@@ -112,6 +123,16 @@ fi
 
 # Normalisation : fins de ligne et espaces en fin de ligne
 normalize() { tr -d '\r' < "$1" | sed -E 's/[[:space:]]+$//'; }
+
+if [ "${ACCEPT:-0}" = "1" ]; then
+  echo "Validation : la page actuelle devient la référence."
+  mkdir -p state && encrypt "$NEW" "$STATE"
+  echo "changed=true" >> "${GITHUB_OUTPUT:-/dev/null}"
+  ntfy_publish "$(jq -n --arg ti "$HEARTBEAT_PREFIX : nouvelle référence enregistrée" --arg site "$URL" \
+    --arg m "La version actuelle de $URL est validée. L'alerte s'arrête jusqu'au prochain changement." \
+    '{title:$ti, message:$m, priority:3, tags:["white_check_mark"], click:$site}')"
+  exit 0
+fi
 
 if [ ! -f "$STATE" ] || ! decrypt "$STATE" "$OLD"; then
   # Premier passage, ou clé changée : on enregistre la page comme référence, sans alerte
@@ -127,10 +148,8 @@ if diff -q <(normalize "$OLD") <(normalize "$NEW") >/dev/null; then
   exit 0
 fi
 
-echo "Changement détecté."
-CHANGES="$(diff <(page_text "$OLD") <(page_text "$NEW") | grep '^>' | sed 's/^> /+ /' | head -8 | cut -c1-200 || true)"
-TITLE_TAG="$(grep -oiE '<title>[^<]*' "$NEW" | head -1 | sed -E 's/<title>//I' || true)"
-encrypt "$NEW" "$STATE"
-echo "changed=true" >> "${GITHUB_OUTPUT:-/dev/null}"
+# La référence n'est pas mise à jour : l'alerte repart à chaque passage jusqu'à la validation.
+echo "Changement détecté (en attente de validation)."
+CHANGES="$(diff <(page_text "$OLD") <(page_text "$NEW") | grep '^>' | sed 's/^> /+ /' | head -5 | cut -c1-200 || true)"
 
-notify "$ALERT_TITLE" "$ALERT_MESSAGE" "Titre de la page : ${TITLE_TAG:-inconnu}${CHANGES:+$'\n'Nouveau texte :$'\n'$CHANGES}"
+notify "$ALERT_TITLE" "$ALERT_MESSAGE" "${CHANGES:+Nouveau texte :$'\n'$CHANGES$'\n\n'}Cette alerte revient à chaque vérification tant que tu n'as pas validé la nouvelle version."
